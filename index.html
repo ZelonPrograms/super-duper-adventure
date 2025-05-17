@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" class="bg-gray-900 text-white">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SwiftBrowse</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#111827">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="flex flex-col h-screen">
+
+  <!-- Tab Headers -->
+  <div id="tabs" class="flex overflow-x-auto bg-gray-800 text-sm px-2 py-1 whitespace-nowrap"></div>
+
+  <!-- Controls -->
+  <div class="flex gap-2 p-2 bg-gray-700 items-center text-black dark:text-white dark:bg-gray-800">
+    <select id="search-engine" class="bg-white dark:bg-gray-900 text-black dark:text-white rounded px-2">
+      <option value="google">Google</option>
+      <option value="duckduckgo">DuckDuckGo</option>
+      <option value="bing">Bing</option>
+    </select>
+    <button onclick="goBack()" class="bg-gray-600 px-2 py-1 rounded text-white">←</button>
+    <button onclick="goForward()" class="bg-gray-600 px-2 py-1 rounded text-white">→</button>
+    <input id="url" type="text" placeholder="Search or enter URL" class="flex-1 px-2 py-1 rounded">
+    <button onclick="loadURL()" class="bg-blue-600 px-2 py-1 rounded text-white">Go</button>
+    <button onclick="newTab()" class="bg-green-600 px-2 py-1 rounded text-white">＋</button>
+    <button onclick="toggleTheme()" class="bg-purple-600 px-2 py-1 rounded text-white">🌓</button>
+  </div>
+
+  <!-- Bookmarks -->
+  <div class="bg-gray-700 p-2 text-sm">
+    <button onclick="toggleBookmark()" class="bg-yellow-500 px-2 py-1 rounded text-black">⭐ Bookmark</button>
+    <span id="bookmarks-list" class="ml-4"></span>
+  </div>
+
+  <!-- Iframe Container -->
+  <div id="iframe-container" class="flex-1 relative"></div>
+
+  <script>
+    const adDomains = ["doubleclick.net", "googlesyndication.com", "adservice.google.com", "adnxs.com"];
+    let tabs = [], currentTab = -1;
+
+    const searchEngines = {
+      google: "https://www.google.com/search?q=",
+      duckduckgo: "https://duckduckgo.com/?q=",
+      bing: "https://www.bing.com/search?q="
+    };
+
+    function isAdURL(url) {
+      return adDomains.some(domain => url.includes(domain));
+    }
+
+    function createIframe(src) {
+      const iframe = document.createElement('iframe');
+      iframe.src = isAdURL(src) ? "about:blank" : src;
+      iframe.className = "absolute top-0 left-0 w-full h-full";
+      return iframe;
+    }
+
+    function newTab() {
+      const iframe = createIframe("https://example.com");
+      tabs.push({ iframe, history: [iframe.src], index: 0 });
+      document.getElementById("iframe-container").appendChild(iframe);
+      switchTab(tabs.length - 1);
+      renderTabs();
+    }
+
+    function switchTab(index) {
+      if (currentTab >= 0) tabs[currentTab].iframe.style.display = "none";
+      currentTab = index;
+      const tab = tabs[currentTab];
+      tab.iframe.style.display = "block";
+      document.getElementById("url").value = tab.iframe.src;
+      renderTabs();
+    }
+
+    function renderTabs() {
+      const container = document.getElementById("tabs");
+      container.innerHTML = "";
+      tabs.forEach((tab, i) => {
+        const btn = document.createElement("button");
+        btn.textContent = `Tab ${i + 1}`;
+        btn.className = `px-3 py-1 rounded mr-2 ${i === currentTab ? 'bg-blue-500' : 'bg-gray-600 hover:bg-gray-500'}`;
+        btn.onclick = () => switchTab(i);
+        container.appendChild(btn);
+      });
+    }
+
+    function loadURL() {
+      const input = document.getElementById("url").value;
+      const engine = document.getElementById("search-engine").value;
+      let url = input.includes("://") ? input : searchEngines[engine] + encodeURIComponent(input);
+      if (isAdURL(url)) return alert("Blocked ad domain!");
+      const tab = tabs[currentTab];
+      tab.iframe.src = url;
+      tab.history.push(url);
+      tab.index = tab.history.length - 1;
+      saveHistory();
+    }
+
+    function goBack() {
+      const tab = tabs[currentTab];
+      if (tab.index > 0) {
+        tab.index--;
+        tab.iframe.src = tab.history[tab.index];
+      }
+    }
+
+    function goForward() {
+      const tab = tabs[currentTab];
+      if (tab.index < tab.history.length - 1) {
+        tab.index++;
+        tab.iframe.src = tab.history[tab.index];
+      }
+    }
+
+    function toggleTheme() {
+      document.documentElement.classList.toggle("dark");
+    }
+
+    function toggleBookmark() {
+      const url = tabs[currentTab].iframe.src;
+      let bookmarks = JSON.parse(localStorage.getItem("bookmarks") || "[]");
+      if (bookmarks.includes(url)) {
+        bookmarks = bookmarks.filter(b => b !== url);
+      } else {
+        bookmarks.push(url);
+      }
+      localStorage.setItem("bookmarks", JSON.stringify(bookmarks));
+      renderBookmarks();
+    }
+
+    function renderBookmarks() {
+      const list = document.getElementById("bookmarks-list");
+      list.innerHTML = "";
+      const bookmarks = JSON.parse(localStorage.getItem("bookmarks") || "[]");
+      bookmarks.forEach(url => {
+        const a = document.createElement("a");
+        a.href = "#";
+        a.className = "text-blue-400 hover:underline mr-2";
+        a.textContent = url.replace(/^https?:\/\//, '').slice(0, 25);
+        a.onclick = () => {
+          tabs[currentTab].iframe.src = url;
+          tabs[currentTab].history.push(url);
+        };
+        list.appendChild(a);
+      });
+    }
+
+    function saveHistory() {
+      const all = tabs.map(tab => tab.history);
+      localStorage.setItem("history", JSON.stringify(all));
+    }
+
+    window.onload = () => {
+      newTab();
+      renderBookmarks();
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+      }
+    };
+  </script>
+
+</body>
+</html>
